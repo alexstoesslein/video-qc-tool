@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+uploads/
+*.png
+*.mp4
+*.mp3
+*.wav
+*.mov
+*.mxf
+*.avi
+*.mkv
+.DS_Store
+.env
