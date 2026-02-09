@@ -5,6 +5,7 @@ import uuid
 import threading
 
 from flask import Flask, jsonify, render_template, request
+from flask_cors import CORS
 
 from config import CHANNEL_CONFIGS, MAX_CONTENT_LENGTH, UPLOAD_FOLDER
 from analyzers.metadata import extract_metadata
@@ -19,6 +20,7 @@ from analyzers.quality_checks import run_quality_checks, aggregate_results
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+CORS(app, origins=["https://alexstoesslein.github.io", "http://127.0.0.1:5000", "http://localhost:5000"])
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 

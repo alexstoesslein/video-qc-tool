@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video QC Tool</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="coi-serviceworker.js"></script>
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+                    <line x1="7" y1="2" x2="7" y2="22"/>
+                    <line x1="17" y1="2" x2="17" y2="22"/>
+                    <line x1="2" y1="12" x2="22" y2="12"/>
+                    <line x1="2" y1="7" x2="7" y2="7"/>
+                    <line x1="2" y1="17" x2="7" y2="17"/>
+                    <line x1="17" y1="7" x2="22" y2="7"/>
+                    <line x1="17" y1="17" x2="22" y2="17"/>
+                </svg>
+                <h1>Video Quality Check</h1>
+            </div>
+            <p class="subtitle">Video hochladen und Zielkanal ausw&auml;hlen, um Qualit&auml;tsstandards zu pr&uuml;fen</p>
+        </div>
+    </header>
+
+    <main>
+        <!-- MODE SWITCHER -->
+        <div class="mode-switcher">
+            <button class="mode-btn active" data-mode="browser">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                    <line x1="8" y1="21" x2="16" y2="21"/>
+                    <line x1="12" y1="17" x2="12" y2="21"/>
+                </svg>
+                Browser (lokal)
+            </button>
+            <button class="mode-btn" data-mode="cloud">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+                </svg>
+                Cloud-Server
+            </button>
+        </div>
+        <p id="mode-info" class="mode-info">Analyse direkt im Browser via ffmpeg.wasm &mdash; keine Daten werden hochgeladen.</p>
+
+        <!-- UPLOAD SECTION -->
+        <section id="upload-section" class="card">
+            <div id="drop-zone" class="drop-zone">
+                <svg class="drop-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <p class="drop-text">Video- oder Audio-Datei hierher ziehen</p>
+                <p class="drop-subtext">oder</p>
+                <label class="file-btn">
+                    Datei ausw&auml;hlen
+                    <input type="file" id="file-input" accept="video/*,audio/*,.mxf,.mov,.mp4,.avi,.mkv,.webm,.ts,.m2ts,.mp3,.wav,.aac,.flac,.ogg,.m4a,.aiff,.wma" hidden>
+                </label>
+                <div id="file-info" class="file-info" hidden>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                    <span id="file-name"></span>
+                    <span id="file-size" class="muted"></span>
+                    <button id="file-remove" class="remove-btn" title="Entfernen">&times;</button>
+                </div>
+                <p id="file-size-warning" class="file-size-warning" hidden>
+                    Dateien &uuml;ber 2 GB k&ouml;nnen im Browser-Modus Probleme verursachen. Cloud-Modus wird empfohlen.
+                </p>
+            </div>
+
+            <div class="channel-row">
+                <div class="channel-selector">
+                    <label for="channel-select">Zielkanal</label>
+                    <select id="channel-select"></select>
+                </div>
+                <p id="channel-description" class="channel-desc"></p>
+            </div>
+
+            <div class="analysis-options">
+                <div class="options-header">
+                    <label class="options-label">Analysen</label>
+                    <button type="button" id="toggle-all-checks" class="toggle-all-btn">Alle abw&auml;hlen</button>
+                </div>
+                <div class="checks-grid" id="analysis-checks">
+                    <label class="check-option">
+                        <input type="checkbox" name="check" value="black_frames" checked>
+                        <span class="check-option-label">Schwarzbilder</span>
+                    </label>
+                    <label class="check-option">
+                        <input type="checkbox" name="check" value="media_offline" checked>
+                        <span class="check-option-label">Media Offline</span>
+                    </label>
+                    <label class="check-option">
+                        <input type="checkbox" name="check" value="noise" checked>
+                        <span class="check-option-label">Rauschen</span>
+                    </label>
+                    <label class="check-option">
+                        <input type="checkbox" name="check" value="loudness" checked>
+                        <span class="check-option-label">Lautst&auml;rke (LUFS)</span>
+                    </label>
+                    <label class="check-option">
+                        <input type="checkbox" name="check" value="clipping" checked>
+                        <span class="check-option-label">&Uuml;bersteuerung</span>
+                    </label>
+                    <label class="check-option">
+                        <input type="checkbox" name="check" value="fuck_frames" checked>
+                        <span class="check-option-label">Fehlschnitte</span>
+                    </label>
+                </div>
+            </div>
+
+            <button id="analyze-btn" class="btn-primary" disabled>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+                Analyse starten
+            </button>
+        </section>
+
+        <!-- LOADING FFMPEG SECTION -->
+        <section id="loading-section" class="card" hidden>
+            <div class="progress-header">
+                <div class="spinner"></div>
+                <h2>ffmpeg.wasm wird geladen...</h2>
+            </div>
+            <p class="progress-text">Erstmaliges Laden kann bis zu 30 Sekunden dauern. Die Datei wird im Browser gecacht.</p>
+        </section>
+
+        <!-- PROGRESS SECTION -->
+        <section id="progress-section" class="card" hidden>
+            <div class="progress-header">
+                <div class="spinner"></div>
+                <h2>Analyse l&auml;uft...</h2>
+            </div>
+
+            <div class="progress-time-row">
+                <span class="progress-elapsed">
+                    <span class="time-label">Vergangen:</span>
+                    <span id="elapsed-time" class="time-value">0s</span>
+                </span>
+                <span class="progress-remaining">
+                    <span class="time-label">Verbleibend:</span>
+                    <span id="remaining-time" class="time-value">Berechnung...</span>
+                </span>
+            </div>
+
+            <div class="progress-bar-wrap">
+                <div id="progress-bar" class="progress-bar"></div>
+            </div>
+
+            <p id="progress-text" class="progress-text">Wird vorbereitet...</p>
+
+            <div id="step-list" class="step-list"></div>
+        </section>
+
+        <!-- RESULTS SECTION -->
+        <section id="results-section" hidden>
+            <!-- Overall -->
+            <div id="overall-card" class="card result-overall">
+                <div class="overall-left">
+                    <div id="overall-badge" class="badge"></div>
+                    <div>
+                        <h2 id="overall-text"></h2>
+                        <p id="overall-summary" class="muted"></p>
+                        <p id="overall-channel" class="muted"></p>
+                    </div>
+                </div>
+                <div id="score-ring" class="score-ring"></div>
+            </div>
+
+            <!-- Stats Row -->
+            <div class="stats-row">
+                <div class="stat-card stat-pass">
+                    <span id="stat-pass" class="stat-num">0</span>
+                    <span class="stat-label">Bestanden</span>
+                </div>
+                <div class="stat-card stat-warn">
+                    <span id="stat-warn" class="stat-num">0</span>
+                    <span class="stat-label">Warnungen</span>
+                </div>
+                <div class="stat-card stat-fail">
+                    <span id="stat-fail" class="stat-num">0</span>
+                    <span class="stat-label">Fehlgeschlagen</span>
+                </div>
+            </div>
+
+            <!-- Metadata -->
+            <div class="card">
+                <h3>Datei-Metadaten</h3>
+                <div class="metadata-grid" id="metadata-grid"></div>
+            </div>
+
+            <!-- Checks -->
+            <div class="card">
+                <div class="checks-header">
+                    <h3>Qualit&auml;tspr&uuml;fungen</h3>
+                    <div class="checks-filter">
+                        <button class="filter-btn active" data-filter="all">Alle</button>
+                        <button class="filter-btn" data-filter="fail">Fehlgeschlagen</button>
+                        <button class="filter-btn" data-filter="warning">Warnungen</button>
+                        <button class="filter-btn" data-filter="pass">Bestanden</button>
+                    </div>
+                </div>
+                <div id="checks-list" class="checks-list"></div>
+            </div>
+
+            <!-- Video/Audio Player + Timeline -->
+            <div id="timeline-section" class="card" hidden>
+                <h3>Erkannte Probleme (Timeline)</h3>
+
+                <div class="player-wrapper" id="video-player-wrapper">
+                    <video id="qc-video" class="qc-video" controls preload="metadata">
+                        Dein Browser unterst&uuml;tzt kein HTML5 Video.
+                    </video>
+                    <div id="player-overlay" class="player-overlay" hidden>
+                        <span id="player-overlay-text"></span>
+                    </div>
+                </div>
+
+                <div class="audio-waveform-wrapper" id="audio-waveform-wrapper" hidden>
+                    <div class="waveform-img-container" id="waveform-img-container">
+                        <canvas id="waveform-canvas" class="waveform-canvas"></canvas>
+                        <div class="waveform-playhead" id="waveform-playhead"></div>
+                    </div>
+                    <audio id="qc-audio" controls preload="metadata"></audio>
+                    <div class="waveform-legend" id="waveform-legend" hidden>
+                        <span class="waveform-legend-item"><span class="waveform-legend-color waveform-legend-clipping"></span>&Uuml;bersteuerung</span>
+                        <span class="waveform-legend-item"><span class="waveform-legend-color waveform-legend-loud"></span>Extreme Lautst&auml;rke</span>
+                    </div>
+                </div>
+
+                <div class="timeline-container">
+                    <div id="timeline-bar" class="timeline-bar"></div>
+                    <div class="timeline-labels">
+                        <span>0:00</span>
+                        <span id="timeline-end"></span>
+                    </div>
+                </div>
+
+                <div id="timeline-list" class="timeline-list"></div>
+            </div>
+
+            <button id="reset-btn" class="btn-secondary">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="1 4 1 10 7 10"/>
+                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                </svg>
+                Neues Video analysieren
+            </button>
+        </section>
+
+        <!-- ERROR -->
+        <section id="error-section" class="card error-card" hidden>
+            <h2>Fehler bei der Analyse</h2>
+            <p id="error-message"></p>
+            <button id="error-reset-btn" class="btn-secondary">Zur&uuml;ck</button>
+        </section>
+    </main>
+
+    <script src="js/config.js"></script>
+    <script src="js/upload.js"></script>
+    <script src="js/results.js"></script>
+    <script src="js/analyzers.js"></script>
+    <script src="js/quality-checks.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

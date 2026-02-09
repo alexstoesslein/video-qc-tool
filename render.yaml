@@ -1,0 +1,5 @@
+services:
+  - type: web
+    name: video-qc-tool
+    runtime: docker
+    plan: free
