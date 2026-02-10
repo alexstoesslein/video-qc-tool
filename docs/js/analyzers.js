@@ -588,6 +588,84 @@ class BrowserAnalyzer {
         };
     }
 
+    /**
+     * Normalize audio using ffmpeg loudnorm (2-pass).
+     * Returns { blob, filename } with the normalized file.
+     */
+    async normalize(file, targetLufs, targetTp) {
+        if (!this._loaded) throw new Error("ffmpeg.wasm not loaded");
+
+        const inputName = 'norm_input' + this._getExtension(file.name);
+        const data = new Uint8Array(await file.arrayBuffer());
+        await this._ffmpeg.writeFile(inputName, data);
+
+        // Determine output format
+        const ext = this._getExtension(file.name).toLowerCase();
+        const isVideo = ['.mp4', '.mov', '.mkv', '.webm', '.ts', '.m2ts', '.avi'].includes(ext);
+        const outExt = ['.mp4', '.mov', '.mkv', '.wav', '.flac', '.m4a'].includes(ext) ? ext : '.wav';
+        const outputName = 'norm_output' + outExt;
+
+        // Pass 1: Measure loudness with loudnorm
+        this._logs = [];
+        const logHandler = ({ message }) => { this._logs.push(message); };
+        this._ffmpeg.on('log', logHandler);
+
+        try {
+            await this._ffmpeg.exec([
+                '-i', inputName,
+                '-af', `loudnorm=I=${targetLufs}:TP=${targetTp}:LRA=11:print_format=json`,
+                '-f', 'null', '-'
+            ]);
+        } catch (e) {}
+
+        this._ffmpeg.off('log', logHandler);
+        const pass1Text = this._logs.join('\n');
+
+        // Extract JSON measurement from loudnorm output
+        const jsonMatch = pass1Text.match(/\{[^}]*"input_i"[^}]*\}/s);
+        if (!jsonMatch) throw new Error("Loudnorm-Messung fehlgeschlagen (Pass 1)");
+
+        const measured = JSON.parse(jsonMatch[0]);
+
+        // Pass 2: Normalize with measured values
+        const loudnormFilter = [
+            `loudnorm=I=${targetLufs}:TP=${targetTp}:LRA=11`,
+            `measured_I=${measured.input_i}`,
+            `measured_TP=${measured.input_tp}`,
+            `measured_LRA=${measured.input_lra}`,
+            `measured_thresh=${measured.input_thresh}`,
+            `offset=${measured.target_offset}`,
+            `linear=true`
+        ].join(':');
+
+        const pass2Args = ['-i', inputName, '-af', loudnormFilter, '-ar', '48000'];
+
+        // For video containers, copy video stream
+        if (isVideo) {
+            pass2Args.push('-c:v', 'copy');
+        }
+
+        pass2Args.push('-y', outputName);
+
+        await this._ffmpeg.exec(pass2Args);
+
+        // Read the output file
+        const outputData = await this._ffmpeg.readFile(outputName);
+        const mimeTypes = {
+            '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.flac': 'audio/flac',
+            '.m4a': 'audio/mp4', '.mp4': 'video/mp4', '.mov': 'video/quicktime',
+            '.mkv': 'video/x-matroska', '.webm': 'video/webm',
+        };
+        const blob = new Blob([outputData.buffer], { type: mimeTypes[outExt] || 'application/octet-stream' });
+
+        // Cleanup
+        try { await this._ffmpeg.deleteFile(inputName); } catch (e) {}
+        try { await this._ffmpeg.deleteFile(outputName); } catch (e) {}
+
+        const baseName = file.name.replace(/\.[^.]+$/, '');
+        return { blob, filename: `${baseName}_normalized${outExt}` };
+    }
+
     _getExtension(filename) {
         const dot = filename.lastIndexOf('.');
         return dot >= 0 ? filename.substring(dot) : '.mp4';

@@ -137,6 +137,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             renderer.renderTimeline(result.checks, result.metadata.duration);
             initFilters();
+            initNormalizeButton();
 
         } catch (e) {
             console.error('Browser analysis error:', e);
@@ -238,6 +239,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     );
                     renderer.renderTimeline(data.result.checks, data.result.metadata.duration);
                     initFilters();
+                    initNormalizeButton();
                 }, 400);
             }
 
@@ -352,6 +354,82 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (filter === 'all') item.hidden = false;
                     else item.hidden = item.dataset.status !== filter;
                 });
+            });
+        });
+    }
+
+    function initNormalizeButton() {
+        document.querySelectorAll('.normalize-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (btn.classList.contains('processing') || btn.classList.contains('done')) return;
+                if (!uploader.selectedFile) return;
+
+                btn.classList.add('processing');
+                btn.querySelector('.normalize-btn-text').textContent = 'Normalisierung l\u00e4uft...';
+                btn.querySelector('.normalize-spinner').hidden = false;
+
+                try {
+                    const config = CHANNEL_CONFIGS[channelSelect.value];
+                    const targetLufs = config.target_lufs;
+                    const targetTp = config.max_true_peak_dbfs || -1.0;
+
+                    let blob, filename;
+
+                    if (currentMode === 'browser') {
+                        // Browser mode: use ffmpeg.wasm
+                        if (!browserAnalyzer) {
+                            browserAnalyzer = new BrowserAnalyzer();
+                            await browserAnalyzer.load();
+                        }
+                        const result = await browserAnalyzer.normalize(uploader.selectedFile, targetLufs, targetTp);
+                        blob = result.blob;
+                        filename = result.filename;
+                    } else {
+                        // Cloud mode: upload to server
+                        const formData = new FormData();
+                        formData.append('file', uploader.selectedFile);
+                        formData.append('channel', channelSelect.value);
+
+                        const response = await fetch(`${CLOUD_API_URL}/api/normalize`, {
+                            method: 'POST',
+                            body: formData,
+                        });
+
+                        if (!response.ok) {
+                            const err = await response.json().catch(() => ({}));
+                            throw new Error(err.error || 'Normalisierung fehlgeschlagen');
+                        }
+
+                        blob = await response.blob();
+                        const baseName = uploader.selectedFile.name.replace(/\.[^.]+$/, '');
+                        const ext = uploader.selectedFile.name.match(/\.[^.]+$/)?.[0] || '.wav';
+                        const outExt = ['.mp4','.mov','.mkv','.wav','.flac','.m4a'].includes(ext.toLowerCase()) ? ext : '.wav';
+                        filename = `${baseName}_normalized${outExt}`;
+                    }
+
+                    // Trigger download
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+
+                    btn.classList.remove('processing');
+                    btn.classList.add('done');
+                    btn.querySelector('.normalize-btn-text').textContent = 'Download gestartet \u2713';
+                    btn.querySelector('.normalize-spinner').hidden = true;
+
+                } catch (e) {
+                    btn.classList.remove('processing');
+                    btn.querySelector('.normalize-btn-text').textContent = `Fehler: ${e.message}`;
+                    btn.querySelector('.normalize-spinner').hidden = true;
+                    setTimeout(() => {
+                        btn.querySelector('.normalize-btn-text').textContent = 'Audio normalisieren';
+                    }, 3000);
+                }
             });
         });
     }

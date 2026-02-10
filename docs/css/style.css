@@ -773,6 +773,49 @@ main {
 .timestamp-list li { font-size: 0.8rem; color: var(--text-muted); padding: 0.2rem 0.5rem; background: rgba(0,0,0,0.2); border-radius: 4px; cursor: pointer; transition: background 0.15s, color 0.15s; }
 .timestamp-list li:hover { background: rgba(99, 102, 241, 0.15); color: var(--accent-hover); }
 
+/* Normalize Button */
+.normalize-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+    padding: 0.45rem 0.9rem;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.normalize-btn:hover:not(.processing):not(.done) {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+}
+
+.normalize-btn.processing {
+    background: var(--border);
+    cursor: wait;
+    opacity: 0.8;
+}
+
+.normalize-btn.done {
+    background: var(--pass);
+    cursor: default;
+}
+
+.normalize-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
 /* Video Player */
 .player-wrapper { position: relative; margin-bottom: 1rem; border-radius: var(--radius-sm); overflow: hidden; background: #000; }
 .qc-video { width: 100%; display: block; max-height: 450px; background: #000; border-radius: var(--radius-sm); }

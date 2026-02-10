@@ -137,7 +137,27 @@ class ResultsRenderer {
         const list = document.getElementById('checks-list');
         const self = this;
 
-        list.innerHTML = checks.map(check => `
+        let normalizeButtonRendered = false;
+
+        list.innerHTML = checks.map(check => {
+            let normalizeHtml = '';
+            const isLoudnessCheck = check.name === 'Lautst\u00e4rke (LUFS)' || check.name === 'True Peak';
+            if (isLoudnessCheck && check.status !== 'pass' && !normalizeButtonRendered) {
+                normalizeButtonRendered = true;
+                const targetLufs = check.details?.target || check.details?.max_dbfs || '';
+                normalizeHtml = `
+                    <button class="normalize-btn" data-target-lufs="${targetLufs}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                        </svg>
+                        <span class="normalize-btn-text">Audio normalisieren</span>
+                        <span class="normalize-spinner" hidden></span>
+                    </button>`;
+            }
+
+            return `
             <div class="check-item" data-status="${check.status}" data-category="${check.category}">
                 <span class="check-icon check-icon-${check.status}">
                     ${this._statusIcon(check.status)}
@@ -147,9 +167,10 @@ class ResultsRenderer {
                     <span class="check-category">${check.category}</span>
                     <p class="check-message">${check.message}</p>
                     ${check.timestamps && check.timestamps.length > 0 ? this._renderTimestamps(check.timestamps, check.status) : ''}
+                    ${normalizeHtml}
                 </div>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
 
         list.querySelectorAll('[data-seek-to]').forEach(el => {
             el.addEventListener('click', () => {

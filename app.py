@@ -1,5 +1,7 @@
 import json
 import os
+import re
+import subprocess
 import time
 import uuid
 import threading
@@ -439,6 +441,109 @@ def get_waveform(job_id):
 
     from flask import send_file
     return send_file(waveform_path, mimetype='image/png')
+
+
+@app.route('/api/normalize', methods=['POST'])
+def normalize_audio():
+    """Normalize audio to target LUFS using ffmpeg loudnorm (2-pass)."""
+    if 'file' not in request.files:
+        return jsonify({"error": "Keine Datei hochgeladen"}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "Kein Dateiname"}), 400
+
+    channel = request.form.get('channel', 'youtube')
+    if channel not in CHANNEL_CONFIGS:
+        return jsonify({"error": f"Unbekannter Kanal: {channel}"}), 400
+
+    config = CHANNEL_CONFIGS[channel]
+    target_lufs = config['target_lufs']
+    target_tp = config.get('max_true_peak_dbfs', -1.0)
+
+    ext = os.path.splitext(file.filename)[1] or '.mp4'
+    temp_name = f"{uuid.uuid4().hex}{ext}"
+    filepath = os.path.join(UPLOAD_FOLDER, temp_name)
+
+    # Save uploaded file
+    CHUNK_SIZE = 64 * 1024 * 1024
+    with open(filepath, 'wb') as dest:
+        while True:
+            chunk = file.stream.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            dest.write(chunk)
+
+    # Output path — keep original container for video, use WAV for pure audio
+    base_name = os.path.splitext(file.filename)[0]
+    out_ext = ext if ext.lower() in ('.mp4', '.mov', '.mkv', '.wav', '.flac', '.m4a') else '.wav'
+    out_name = f"{uuid.uuid4().hex}_normalized{out_ext}"
+    out_path = os.path.join(UPLOAD_FOLDER, out_name)
+
+    try:
+        # Pass 1: Measure loudness
+        pass1_cmd = [
+            'ffmpeg', '-i', filepath,
+            '-af', f'loudnorm=I={target_lufs}:TP={target_tp}:LRA=11:print_format=json',
+            '-f', 'null', '-'
+        ]
+        result = subprocess.run(pass1_cmd, capture_output=True, text=True, timeout=600)
+
+        # Extract the JSON block from loudnorm output
+        json_match = re.search(r'\{[^}]*"input_i"[^}]*\}', result.stderr, re.DOTALL)
+        if not json_match:
+            return jsonify({"error": "Loudnorm-Messung fehlgeschlagen (Pass 1)"}), 500
+
+        measured = json.loads(json_match.group())
+
+        # Pass 2: Normalize with measured values (linear mode for best quality)
+        loudnorm_filter = (
+            f"loudnorm=I={target_lufs}:TP={target_tp}:LRA=11"
+            f":measured_I={measured['input_i']}"
+            f":measured_TP={measured['input_tp']}"
+            f":measured_LRA={measured['input_lra']}"
+            f":measured_thresh={measured['input_thresh']}"
+            f":offset={measured['target_offset']}"
+            f":linear=true"
+        )
+
+        pass2_cmd = ['ffmpeg', '-i', filepath, '-af', loudnorm_filter, '-ar', '48000']
+
+        # For video containers, copy video stream untouched
+        if ext.lower() in ('.mp4', '.mov', '.mkv', '.webm', '.ts', '.m2ts', '.avi'):
+            pass2_cmd.extend(['-c:v', 'copy'])
+
+        pass2_cmd.extend(['-y', out_path])
+
+        result2 = subprocess.run(pass2_cmd, capture_output=True, text=True, timeout=600)
+        if result2.returncode != 0:
+            return jsonify({"error": f"Normalisierung fehlgeschlagen: {result2.stderr[:300]}"}), 500
+
+        if not os.path.exists(out_path):
+            return jsonify({"error": "Normalisierte Datei nicht erstellt"}), 500
+
+        from flask import send_file
+        download_name = f"{base_name}_normalized{out_ext}"
+
+        # Schedule cleanup after 60 seconds
+        def cleanup():
+            for p in [filepath, out_path]:
+                if os.path.exists(p):
+                    os.remove(p)
+        threading.Timer(60, cleanup).start()
+
+        return send_file(out_path, as_attachment=True, download_name=download_name)
+
+    except subprocess.TimeoutExpired:
+        for p in [filepath, out_path]:
+            if os.path.exists(p):
+                os.remove(p)
+        return jsonify({"error": "Normalisierung Timeout (>10min)"}), 500
+    except Exception as e:
+        for p in [filepath, out_path]:
+            if os.path.exists(p):
+                os.remove(p)
+        return jsonify({"error": str(e)}), 500
 
 
 def _format_time(seconds):
