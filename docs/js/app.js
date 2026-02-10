@@ -91,10 +91,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function analyzeBrowser(file, isAudioOnly) {
         try {
             // Load ffmpeg.wasm if needed
-            if (!browserAnalyzer) {
+            if (!browserAnalyzer || !browserAnalyzer.isLoaded) {
                 showSection('loading');
                 browserAnalyzer = new BrowserAnalyzer();
-                await browserAnalyzer.load();
+                try {
+                    await browserAnalyzer.load();
+                } catch (loadErr) {
+                    browserAnalyzer = null; // Reset so next attempt retries loading
+                    throw loadErr;
+                }
             }
 
             showSection('progress');
@@ -377,7 +382,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     if (currentMode === 'browser') {
                         // Browser mode: use ffmpeg.wasm
-                        if (!browserAnalyzer) {
+                        if (!browserAnalyzer || !browserAnalyzer.isLoaded) {
                             browserAnalyzer = new BrowserAnalyzer();
                             await browserAnalyzer.load();
                         }

@@ -9,16 +9,29 @@ class BrowserAnalyzer {
     constructor() {
         this._ffmpeg = null;
         this._loaded = false;
+        this.isLoaded = false; // Public flag for external checks
         this.onProgress = null; // callback(stepKey, stepLabel, percent)
     }
 
     async load() {
         if (this._loaded) return;
 
+        console.log('[ffmpeg.wasm] Starting load...');
+        console.log('[ffmpeg.wasm] SharedArrayBuffer available:', typeof SharedArrayBuffer !== 'undefined');
+        console.log('[ffmpeg.wasm] crossOriginIsolated:', window.crossOriginIsolated);
+
         // Dynamic import of ffmpeg.wasm ESM build from CDN
-        const { FFmpeg } = await import(
-            'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js'
-        );
+        let FFmpeg;
+        try {
+            const mod = await import(
+                'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js'
+            );
+            FFmpeg = mod.FFmpeg;
+            console.log('[ffmpeg.wasm] ESM module imported successfully');
+        } catch (importErr) {
+            console.error('[ffmpeg.wasm] Failed to import ESM module:', importErr);
+            throw new Error(`ffmpeg.wasm konnte nicht geladen werden: ${importErr.message}`);
+        }
 
         this._ffmpeg = new FFmpeg();
 
@@ -30,14 +43,46 @@ class BrowserAnalyzer {
             this._currentProgress = Math.round(progress * 100);
         });
 
-        // Load the multi-threaded core (requires SharedArrayBuffer via coi-serviceworker)
-        await this._ffmpeg.load({
-            coreURL: 'https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/esm/ffmpeg-core.js',
-            wasmURL: 'https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/esm/ffmpeg-core.wasm',
-            workerURL: 'https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/esm/ffmpeg-core.worker.js',
-        });
+        // Try multi-threaded core first (requires SharedArrayBuffer), then fall back to single-threaded
+        const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined' && window.crossOriginIsolated;
+
+        if (hasSharedArrayBuffer) {
+            console.log('[ffmpeg.wasm] Loading multi-threaded core (core-mt)...');
+            try {
+                await this._ffmpeg.load({
+                    coreURL: 'https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/esm/ffmpeg-core.js',
+                    wasmURL: 'https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/esm/ffmpeg-core.wasm',
+                    workerURL: 'https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/esm/ffmpeg-core.worker.js',
+                });
+                console.log('[ffmpeg.wasm] Multi-threaded core loaded successfully');
+            } catch (mtErr) {
+                console.warn('[ffmpeg.wasm] Multi-threaded core failed, falling back to single-threaded:', mtErr);
+                // Re-create FFmpeg instance for clean state
+                this._ffmpeg = new FFmpeg();
+                this._ffmpeg.on('log', ({ message }) => { this._lastLog = message; });
+                this._ffmpeg.on('progress', ({ progress }) => { this._currentProgress = Math.round(progress * 100); });
+                await this._ffmpeg.load({
+                    coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js',
+                    wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm',
+                });
+                console.log('[ffmpeg.wasm] Single-threaded core loaded (fallback)');
+            }
+        } else {
+            console.log('[ffmpeg.wasm] SharedArrayBuffer not available, loading single-threaded core...');
+            try {
+                await this._ffmpeg.load({
+                    coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js',
+                    wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm',
+                });
+                console.log('[ffmpeg.wasm] Single-threaded core loaded successfully');
+            } catch (stErr) {
+                console.error('[ffmpeg.wasm] Single-threaded core also failed:', stErr);
+                throw new Error(`ffmpeg.wasm Core konnte nicht geladen werden: ${stErr.message}`);
+            }
+        }
 
         this._loaded = true;
+        this.isLoaded = true;
     }
 
     _report(stepKey, label) {
